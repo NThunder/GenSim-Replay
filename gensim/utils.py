@@ -15,7 +15,23 @@ from pygments.lexers import PythonLexer
 from pygments.formatters import TerminalFormatter
 import re
 
-import openai
+from openai import OpenAI
+client = OpenAI(api_key="", base_url="https://api.proxyapi.ru/google/v1beta/openai/")
+
+import requests
+import json
+# Задайте необходимые параметры
+url = "https://api.proxyapi.ru/google/v1/models/gemini-1.5-flash:generateContent"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer "
+}
+
+import metaworld
+SEED = 0  # some seed number here
+benchmark = metaworld.ML1('pick-place-v2', seed=SEED)
+
+
 import IPython
 import time
 import pybullet as p
@@ -343,43 +359,68 @@ def insert_system_message(message_history):
 # globally always feed the previous reply as the assistant message back into the model
 existing_messages = []
 def generate_feedback(prompt, max_tokens=2048, temperature=0.0, interaction_txt=None, retry_max=5, n=1):
-    """ use GPT-4 API """
     global existing_messages
     global model
     if model == "text-davinci-003":
         return generate_feedback_completion_only(prompt, max_tokens, temperature)
+
     existing_messages.append({"role": "user", "content": prompt})
     truncated_messages = truncate_message_for_token_limit(existing_messages)
     insert_system_message(truncated_messages)
 
+    # Prepare the parameters for the new API
     params = {
-        "model": model,
+        "model": "gemini-1.5-pro",
+        "messages": truncated_messages,
         "max_tokens": max_tokens,
         "temperature": temperature,
-        "messages": truncated_messages,
         "n": n
     }
+    
+    system_message_prompt = 'You are a helpful and expert assistant in robot simulation code writing and task design.'
+    'You design tasks that are creative and do-able by table-top manipulation. '
+    'You write code without syntax errors and always think through and document your code carefully. '
+
+    data = {
+        "contents": [{"role": "user", "parts": [{"text":system_message_prompt + prompt}]}],
+        "generationConfig": {
+            "temperature": temperature,
+            "maxOutputTokens": max_tokens,
+        }}
 
     for retry in range(retry_max):
         try:
             if interaction_txt is not None:
                 add_to_txt(interaction_txt, ">>> Prompt: \n" + prompt, with_print=False)
-            call_res = openai.ChatCompletion.create(**params)
-            res = call_res["choices"][0]["message"]["content"]
+            # Call the new ChatCompletion method
+            # call_res = client.chat.completions.create(**params)
+            # res = call_res.choices[0].message.content
+            
+            response = requests.post(url, headers=headers, json=data)
+            # Проверьте статус-код ответа
+            if response.status_code == 200:
+                # Парсим JSON-ответ
+                response_data = response.json()
+                # Извлекаем текст из ответа
+                res = response_data["candidates"][0]["content"]["parts"][0]["text"]
+            else:
+                print(f"Ошибка: {response.status_code}, {response.text}")
+
             existing_messages.append({"role": "assistant", "content": res})
 
             to_print = highlight(f"{res}", PythonLexer(), TerminalFormatter())
             print(to_print)
             if interaction_txt is not None:
-                add_to_txt(interaction_txt,  ">>> Answer: \n" + res, with_print=False)
+                add_to_txt(interaction_txt, ">>> Answer: \n" + res, with_print=False)
 
             if n > 1:
-                return [r["message"]["content"] for r in call_res["choices"]]
+                return [r["message"]["content"] for r in call_res.choices]
             return res
 
         except Exception as e:
             print("failed chat completion", e)
     raise Exception("Failed to generate")
+
 
 def clear_messages():
     global existing_messages
@@ -414,8 +455,8 @@ def generate_feedback_completion_only(prompt, max_tokens=800, temperature=0.0, i
         try:
             if interaction_txt is not None:
                 add_to_txt(interaction_txt, ">>> Prompt: \n" + prompt, with_print=False)
-            call_res = openai.Completion.create(**params)
-            res = call_res["choices"][0]["text"]
+            call_res = client.completions.create(**params)
+            res = call_res.choices[0].text
 
             to_print = highlight(f"{res}", PythonLexer(), TerminalFormatter())
             print(to_print)
@@ -423,7 +464,7 @@ def generate_feedback_completion_only(prompt, max_tokens=800, temperature=0.0, i
                 add_to_txt(interaction_txt,  ">>> Answer: \n" + res, with_print=False)
 
             if n > 1:
-                return [r["text"] for r in call_res["choices"]]
+                return [r["text"] for r in call_res.choices]
             return res
 
         except Exception as e:

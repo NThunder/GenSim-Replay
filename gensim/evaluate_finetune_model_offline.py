@@ -26,9 +26,8 @@ from gensim.utils import (
     save_text)
 import csv
 
-@hydra.main(config_path='../cliport/cfg', config_name='data', version_base="1.2")
+@hydra.main(config_path='../cliport/cfg', config_name='data')
 def main(cfg):
-    openai.api_key = cfg['openai_key']
 
 
     cfg['model_output_dir'] = os.path.join(cfg['output_folder'], cfg['model_output_dir'])
