@@ -1,0 +1,65 @@
+import numpy as np
+import os
+import pybullet as p
+import random
+from cliport.tasks import primitives
+from cliport.tasks.grippers import Spatula
+from cliport.tasks.task import Task
+from cliport.utils import utils
+import numpy as np
+from cliport.tasks.task import Task
+from cliport.utils import utils
+
+class CylinderSortingPrecision(Task):
+    """Precisely stack three differently colored cylinders into matching colored zones on the tabletop."""
+
+    def __init__(self):
+        super().__init__()
+        self.max_steps = 3
+        self.lang_template = "place the {color} cylinder in the {color} zone"
+        self.task_completed_desc = "done sorting cylinders."
+        self.additional_reset()
+
+    def reset(self, env):
+        super().reset(env)
+
+        # Define the colors for the cylinders and zones.
+        colors = ['red', 'green', 'blue']
+        color_names = ['red', 'green', 'blue']
+        cylinder_size = (0.04, 0.04, 0.12)  # Diameter, Diameter, Height
+        zone_size = (0.1, 0.1, 0)  # Length, Width, Height (zones are flat)
+
+        # Add zones with matching colors.
+        zone_poses = []
+        for i, color in enumerate(colors):
+            zone_pose = self.get_random_pose(env, zone_size)
+            zone_urdf = 'zone/zone.urdf'
+            env.add_object(zone_urdf, zone_pose, 'fixed', color=utils.COLORS[color])
+            zone_poses.append(zone_pose)
+
+        # Add cylinders with matching colors.
+        cylinders = []
+        cylinder_template = 'cylinder/cylinder-template.urdf'
+        for i, color in enumerate(colors):
+            cylinder_pose = self.get_random_pose(env, cylinder_size)
+            replace = {'COLOR': utils.COLORS[color], 'SIZE': cylinder_size}
+            cylinder_urdf = self.fill_template(cylinder_template, replace)
+            cylinder_id = env.add_object(cylinder_urdf, cylinder_pose)
+            cylinders.append(cylinder_id)
+
+        # Add goals for each cylinder to be placed in the matching color zone.
+        for i, (cylinder_id, zone_pose) in enumerate(zip(cylinders, zone_poses)):
+            language_goal = self.lang_template.format(color=color_names[i])
+            self.add_goal(objs=[cylinder_id], 
+                          matches=np.ones((1, 1)), 
+                          targ_poses=[zone_pose], 
+                          replace=False,
+                          rotations=True, 
+                          metric='zone', 
+                          params=[(zone_pose, zone_size)], 
+                          step_max_reward=1 / len(cylinders), 
+                          language_goal=language_goal)
+
+        # The task is to place each cylinder in the zone with the same color.
+        # The robot must align the base of the cylinder with the center of the zone.
+        # This requires precise control and alignment.

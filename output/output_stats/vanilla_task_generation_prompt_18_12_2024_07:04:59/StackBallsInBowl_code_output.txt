@@ -1,0 +1,62 @@
+import numpy as np
+import os
+import pybullet as p
+import random
+from cliport.tasks import primitives
+from cliport.tasks.grippers import Spatula
+from cliport.tasks.task import Task
+from cliport.utils import utils
+import numpy as np
+from cliport.tasks.task import Task
+from cliport.utils import utils
+
+class StackBallsInBowl(Task):
+    """Pick up three different colored balls (red, green, and blue) and stack them inside a brown bowl."""
+
+    def __init__(self):
+        super().__init__()
+        self.max_steps = 10  # Set maximum steps for task completion
+        self.lang_template = "stack the red, green, and blue balls in the brown bowl"  # Language goal template
+        self.task_completed_desc = "done stacking balls in bowl."  # Description for task completion
+        self.additional_reset()
+
+    def reset(self, env):
+        super().reset(env)
+
+        # Bowl
+        # Size: Medium (0.12, 0.12, 0.05)
+        # Color: Brown
+        # Category: Fixed (cannot be moved)
+        bowl_size = (0.12, 0.12, 0.05)
+        bowl_urdf = 'bowl/bowl.urdf'
+        bowl_pose = self.get_random_pose(env, bowl_size)
+        bowl_id = env.add_object(bowl_urdf, bowl_pose, 'fixed', color=utils.COLORS['brown'])
+
+        # Balls
+        # Size: Small (0.04 radius)
+        # Colors: Red, Green, Blue
+        # Category: Object (can be moved)
+        ball_size = (0.04, 0.04, 0.04)
+        ball_urdf = 'ball/ball-template.urdf'
+        ball_colors = ['red', 'green', 'blue']
+        ball_ids = []
+
+        for color in ball_colors:
+            ball_pose = self.get_random_pose(env, ball_size)
+            ball_id = env.add_object(ball_urdf, ball_pose, color=utils.COLORS[color])
+            ball_ids.append(ball_id)
+
+        # Goal: Stack balls in the bowl
+        # Matches: One-to-one correspondence between balls and target positions within the bowl
+        # Target poses: Slightly elevated positions inside the bowl to simulate stacking
+        # Metric: Pose achievement (balls must be close to target poses and orientations)
+        # Params: None (no additional parameters needed for pose metric)
+        # Step max reward: 1 (single goal)
+        targ_poses = []
+        for i in range(len(ball_ids)):
+            targ_pose = (bowl_pose[0], bowl_pose[1], bowl_pose[2] + (i + 1) * 0.05)  # Stacking positions
+            targ_poses.append((targ_pose, bowl_pose[1])) # target orientation is same as bowl orientation
+
+        self.add_goal(objs=ball_ids, matches=np.eye(len(ball_ids)), targ_poses=targ_poses, 
+                      replace=False, rotations=True, metric='pose', params=None, 
+                      step_max_reward=1, language_goal=self.lang_template)
